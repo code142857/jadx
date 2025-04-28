@@ -6,31 +6,30 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.zip.ZipEntry;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import jadx.api.ResourceFile.ZipRef;
 import jadx.api.impl.SimpleCodeInfo;
 import jadx.api.plugins.CustomResourcesLoader;
 import jadx.api.plugins.resources.IResContainerFactory;
 import jadx.api.plugins.resources.IResTableParserProvider;
 import jadx.api.plugins.resources.IResourcesLoader;
-import jadx.api.plugins.utils.ZipSecurity;
 import jadx.core.dex.nodes.RootNode;
 import jadx.core.utils.Utils;
 import jadx.core.utils.android.Res9patchStreamDecoder;
 import jadx.core.utils.exceptions.JadxException;
 import jadx.core.utils.exceptions.JadxRuntimeException;
 import jadx.core.utils.files.FileUtils;
-import jadx.core.utils.files.ZipFile;
 import jadx.core.xmlgen.BinaryXMLParser;
 import jadx.core.xmlgen.IResTableParser;
 import jadx.core.xmlgen.ResContainer;
 import jadx.core.xmlgen.ResTableBinaryParserProvider;
+import jadx.zip.IZipEntry;
+import jadx.zip.ZipContent;
 
 import static jadx.core.utils.files.FileUtils.READ_BUFFER_SIZE;
 import static jadx.core.utils.files.FileUtils.copyStream;
@@ -39,21 +38,21 @@ import static jadx.core.utils.files.FileUtils.copyStream;
 public final class ResourcesLoader implements IResourcesLoader {
 	private static final Logger LOG = LoggerFactory.getLogger(ResourcesLoader.class);
 
-	private final JadxDecompiler jadxRef;
+	private final JadxDecompiler decompiler;
 
 	private final List<IResTableParserProvider> resTableParserProviders = new ArrayList<>();
 	private final List<IResContainerFactory> resContainerFactories = new ArrayList<>();
 
 	private BinaryXMLParser binaryXmlParser;
 
-	ResourcesLoader(JadxDecompiler jadxRef) {
-		this.jadxRef = jadxRef;
+	ResourcesLoader(JadxDecompiler decompiler) {
+		this.decompiler = decompiler;
 		this.resTableParserProviders.add(new ResTableBinaryParserProvider());
 	}
 
 	List<ResourceFile> load(RootNode root) {
 		init(root);
-		List<File> inputFiles = jadxRef.getArgs().getInputFiles();
+		List<File> inputFiles = decompiler.getArgs().getInputFiles();
 		List<ResourceFile> list = new ArrayList<>(inputFiles.size());
 		for (File file : inputFiles) {
 			loadFile(list, file);
@@ -94,28 +93,19 @@ public final class ResourcesLoader implements IResourcesLoader {
 
 	public static <T> T decodeStream(ResourceFile rf, ResourceDecoder<T> decoder) throws JadxException {
 		try {
-			ZipRef zipRef = rf.getZipRef();
-			if (zipRef == null) {
+			IZipEntry zipEntry = rf.getZipEntry();
+			if (zipEntry != null) {
+				try (InputStream inputStream = zipEntry.getInputStream()) {
+					return decoder.decode(zipEntry.getUncompressedSize(), inputStream);
+				}
+			} else {
 				File file = new File(rf.getOriginalName());
 				try (InputStream inputStream = new BufferedInputStream(new FileInputStream(file))) {
 					return decoder.decode(file.length(), inputStream);
 				}
-			} else {
-				try (ZipFile zipFile = new ZipFile(zipRef.getZipFile())) {
-					ZipEntry entry = zipFile.getEntry(zipRef.getEntryName());
-					if (entry == null) {
-						throw new IOException("Zip entry not found: " + zipRef);
-					}
-					if (!ZipSecurity.isValidZipEntry(entry)) {
-						return null;
-					}
-					try (InputStream inputStream = ZipSecurity.getInputStreamForEntry(zipFile, entry)) {
-						return decoder.decode(entry.getSize(), inputStream);
-					}
-				}
 			}
 		} catch (Exception e) {
-			throw new JadxException("Error decode: " + rf.getDeobfName(), e);
+			throw new JadxException("Error decode: " + rf.getOriginalName(), e);
 		}
 	}
 
@@ -195,7 +185,7 @@ public final class ResourcesLoader implements IResourcesLoader {
 		}
 
 		// Try to load the resources with a custom loader first
-		for (CustomResourcesLoader loader : jadxRef.getCustomResourcesLoaders()) {
+		for (CustomResourcesLoader loader : decompiler.getCustomResourcesLoaders()) {
 			if (loader.load(this, list, file)) {
 				LOG.debug("Custom loader used for {}", file.getAbsolutePath());
 				return;
@@ -208,25 +198,31 @@ public final class ResourcesLoader implements IResourcesLoader {
 
 	public void defaultLoadFile(List<ResourceFile> list, File file, String subDir) {
 		if (FileUtils.isZipFile(file)) {
-			ZipSecurity.visitZipEntries(file, (zipFile, entry) -> {
-				addEntry(list, file, entry, subDir);
-				return null;
-			});
+			try {
+				ZipContent zipContent = decompiler.getZipReader().open(file);
+				// do not close a zip now, entry content will be read later
+				decompiler.addCloseable(zipContent);
+				for (IZipEntry entry : zipContent.getEntries()) {
+					addEntry(list, file, entry, subDir);
+				}
+			} catch (Exception e) {
+				throw new RuntimeException("Failed to open zip file: " + file.getAbsolutePath(), e);
+			}
 		} else {
 			ResourceType type = ResourceType.getFileType(file.getAbsolutePath());
-			list.add(ResourceFile.createResourceFile(jadxRef, file, type));
+			list.add(ResourceFile.createResourceFile(decompiler, file, type));
 		}
 	}
 
-	public void addEntry(List<ResourceFile> list, File zipFile, ZipEntry entry, String subDir) {
+	public void addEntry(List<ResourceFile> list, File zipFile, IZipEntry entry, String subDir) {
 		if (entry.isDirectory()) {
 			return;
 		}
 		String name = entry.getName();
 		ResourceType type = ResourceType.getFileType(name);
-		ResourceFile rf = ResourceFile.createResourceFile(jadxRef, subDir + name, type);
+		ResourceFile rf = ResourceFile.createResourceFile(decompiler, subDir + name, type);
 		if (rf != null) {
-			rf.setZipRef(new ZipRef(zipFile, name));
+			rf.setZipEntry(entry);
 			list.add(rf);
 		}
 	}
@@ -234,12 +230,12 @@ public final class ResourcesLoader implements IResourcesLoader {
 	public static ICodeInfo loadToCodeWriter(InputStream is) throws IOException {
 		ByteArrayOutputStream baos = new ByteArrayOutputStream(READ_BUFFER_SIZE);
 		copyStream(is, baos);
-		return new SimpleCodeInfo(baos.toString("UTF-8"));
+		return new SimpleCodeInfo(baos.toString(StandardCharsets.UTF_8));
 	}
 
 	private synchronized BinaryXMLParser loadBinaryXmlParser() {
 		if (binaryXmlParser == null) {
-			binaryXmlParser = new BinaryXMLParser(jadxRef.getRoot());
+			binaryXmlParser = new BinaryXMLParser(decompiler.getRoot());
 		}
 		return binaryXmlParser;
 	}

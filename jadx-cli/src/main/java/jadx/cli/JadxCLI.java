@@ -1,7 +1,8 @@
 package jadx.cli;
 
-import java.util.Set;
+import java.util.function.Consumer;
 
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -10,11 +11,8 @@ import jadx.api.JadxDecompiler;
 import jadx.api.impl.AnnotatedCodeWriter;
 import jadx.api.impl.NoOpCodeCache;
 import jadx.api.impl.SimpleCodeWriter;
-import jadx.api.security.JadxSecurityFlag;
-import jadx.api.security.impl.JadxSecurity;
 import jadx.cli.LogHelper.LogLevelEnum;
 import jadx.cli.plugins.JadxFilesGetter;
-import jadx.commons.app.JadxCommonEnv;
 import jadx.core.utils.exceptions.JadxArgsValidateException;
 import jadx.plugins.tools.JadxExternalPluginsLoader;
 
@@ -31,10 +29,18 @@ public class JadxCLI {
 	}
 
 	public static int execute(String[] args) {
+		return execute(args, null);
+	}
+
+	public static int execute(String[] args, @Nullable Consumer<JadxArgs> argsMod) {
 		try {
-			JadxCLIArgs jadxArgs = new JadxCLIArgs();
-			if (jadxArgs.processArgs(args)) {
-				return processAndSave(jadxArgs);
+			JadxCLIArgs cliArgs = new JadxCLIArgs();
+			if (cliArgs.processArgs(args)) {
+				JadxArgs jadxArgs = buildArgs(cliArgs);
+				if (argsMod != null) {
+					argsMod.accept(jadxArgs);
+				}
+				return runSave(jadxArgs, cliArgs);
 			}
 			return 0;
 		} catch (JadxArgsValidateException e) {
@@ -46,7 +52,7 @@ public class JadxCLI {
 		}
 	}
 
-	private static int processAndSave(JadxCLIArgs cliArgs) {
+	private static JadxArgs buildArgs(JadxCLIArgs cliArgs) {
 		LogHelper.initLogLevel(cliArgs);
 		LogHelper.setLogLevelsForLoadingStage();
 		JadxArgs jadxArgs = cliArgs.toJadxArgs();
@@ -54,7 +60,11 @@ public class JadxCLI {
 		jadxArgs.setPluginLoader(new JadxExternalPluginsLoader());
 		jadxArgs.setFilesGetter(JadxFilesGetter.INSTANCE);
 		initCodeWriterProvider(jadxArgs);
-		applyEnvVars(jadxArgs);
+		JadxAppCommon.applyEnvVars(jadxArgs);
+		return jadxArgs;
+	}
+
+	private static int runSave(JadxArgs jadxArgs, JadxCLIArgs cliArgs) {
 		try (JadxDecompiler jadx = new JadxDecompiler(jadxArgs)) {
 			jadx.load();
 			if (checkForErrors(jadx)) {
@@ -84,22 +94,6 @@ public class JadxCLI {
 				// needed for code offsets and source lines
 				jadxArgs.setCodeWriterProvider(AnnotatedCodeWriter::new);
 				break;
-		}
-	}
-
-	private static void applyEnvVars(JadxArgs jadxArgs) {
-		Set<JadxSecurityFlag> flags = JadxSecurityFlag.all();
-		boolean modified = false;
-		boolean disableXmlSecurity = JadxCommonEnv.getBool("JADX_DISABLE_XML_SECURITY", false);
-		if (disableXmlSecurity) {
-			flags.remove(JadxSecurityFlag.SECURE_XML_PARSER);
-			// TODO: not related to 'xml security', but kept for compatibility
-			flags.remove(JadxSecurityFlag.VERIFY_APP_PACKAGE);
-			modified = true;
-		}
-		// TODO: migrate 'ZipSecurity'
-		if (modified) {
-			jadxArgs.setSecurity(new JadxSecurity(flags));
 		}
 	}
 

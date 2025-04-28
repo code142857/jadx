@@ -4,7 +4,7 @@ plugins {
 	id("application")
 
 	// use shadow only for application scripts, jar will be copied from jadx-gui
-	id("com.gradleup.shadow") version "8.3.3"
+	id("com.gradleup.shadow") version "8.3.6"
 }
 
 dependencies {
@@ -18,12 +18,14 @@ dependencies {
 	runtimeOnly(project(":jadx-plugins:jadx-smali-input"))
 	runtimeOnly(project(":jadx-plugins:jadx-rename-mappings"))
 	runtimeOnly(project(":jadx-plugins:jadx-kotlin-metadata"))
+	runtimeOnly(project(":jadx-plugins:jadx-kotlin-source-debug-extension"))
 	runtimeOnly(project(":jadx-plugins:jadx-script:jadx-script-plugin"))
 	runtimeOnly(project(":jadx-plugins:jadx-xapk-input"))
 	runtimeOnly(project(":jadx-plugins:jadx-aab-input"))
+	runtimeOnly(project(":jadx-plugins:jadx-apkm-input"))
 
 	implementation("org.jcommander:jcommander:2.0")
-	implementation("ch.qos.logback:logback-classic:1.5.11")
+	implementation("ch.qos.logback:logback-classic:1.5.18")
 }
 
 application {
@@ -35,6 +37,8 @@ application {
 			"-XX:MaxRAMPercentage=70.0",
 			// disable zip checks (#1962)
 			"-Djdk.util.zip.disableZip64ExtraFieldValidation=true",
+			// Foreign API access for 'directories' library (Windows only)
+			"--enable-native-access=ALL-UNNAMED",
 		)
 	applicationDistribution.from("$rootDir") {
 		include("README.md")

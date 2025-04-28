@@ -6,6 +6,8 @@ import java.awt.KeyboardFocusManager;
 import java.awt.event.FocusEvent;
 import java.awt.event.FocusListener;
 import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -57,6 +59,19 @@ public class TabbedPane extends JTabbedPane implements ITabStatesListener {
 
 		controller.addListener(this);
 		setTabLayoutPolicy(JTabbedPane.SCROLL_TAB_LAYOUT);
+
+		MouseAdapter clickAdapter = new MouseAdapter() {
+			@Override
+			public void mousePressed(MouseEvent e) {
+				int tabIndex = indexAtLocation(e.getX(), e.getY());
+				if (tabIndex == -1 || tabIndex > getTabCount()) {
+					return;
+				}
+				TabComponent tab = (TabComponent) getTabComponentAt(tabIndex);
+				tab.dispatchEvent(e);
+			}
+		};
+		addMouseListener(clickAdapter);
 
 		addMouseWheelListener(event -> {
 			if (dnd != null && dnd.isDragging()) {
@@ -211,8 +226,8 @@ public class TabbedPane extends JTabbedPane implements ITabStatesListener {
 	private @Nullable ContentPanel showCode(JumpPosition jumpPos) {
 		ContentPanel contentPanel = getContentPanel(jumpPos.getNode());
 		if (contentPanel != null) {
-			scrollToPos(contentPanel, jumpPos.getPos());
 			selectTab(contentPanel);
+			scrollToPos(contentPanel, jumpPos.getPos());
 		}
 		return contentPanel;
 	}
@@ -224,8 +239,8 @@ public class TabbedPane extends JTabbedPane implements ITabStatesListener {
 		}
 		if (contentPanel instanceof AbstractCodeContentPanel) {
 			AbstractCodeArea codeArea = ((AbstractCodeContentPanel) contentPanel).getCodeArea();
-			codeArea.scrollToPos(pos);
 			codeArea.requestFocus();
+			codeArea.scrollToPos(pos);
 		}
 	}
 
@@ -414,7 +429,7 @@ public class TabbedPane extends JTabbedPane implements ITabStatesListener {
 	}
 
 	@Override
-	public void onTabCodeJump(TabBlueprint blueprint, JumpPosition position) {
+	public void onTabCodeJump(TabBlueprint blueprint, @Nullable JumpPosition prevPos, JumpPosition position) {
 		showCode(position);
 	}
 

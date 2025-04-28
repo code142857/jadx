@@ -24,6 +24,7 @@ import jadx.api.impl.SimpleCodeInfo;
 import jadx.api.impl.SimpleCodeWriter;
 import jadx.api.metadata.ICodeAnnotation;
 import jadx.api.metadata.annotations.NodeDeclareRef;
+import jadx.api.metadata.annotations.VarRef;
 import jadx.api.plugins.input.data.IClassData;
 import jadx.api.plugins.input.data.IFieldData;
 import jadx.api.plugins.input.data.IMethodData;
@@ -175,9 +176,7 @@ public class ClassNode extends NotificationAttrNode
 	}
 
 	private static void processSpecialClasses(ClassNode cls) {
-		AccessInfo flags = cls.getAccessFlags();
-		if (flags.isSynthetic() && flags.isInterface() && flags.isAbstract()
-				&& cls.getName().equals("package-info")) {
+		if (cls.getName().equals("package-info") && cls.getFields().isEmpty() && cls.getMethods().isEmpty()) {
 			cls.add(AFlag.PACKAGE_INFO);
 			cls.add(AFlag.DONT_RENAME);
 		}
@@ -425,6 +424,20 @@ public class ClassNode extends NotificationAttrNode
 				declareRef.getNode().setDefPosition(pos);
 			}
 		}
+		// validate var refs
+		annotations.values().removeIf(v -> {
+			if (v.getAnnType() == ICodeAnnotation.AnnType.VAR_REF) {
+				VarRef varRef = (VarRef) v;
+				if (varRef.getRefPos() == 0) {
+					if (LOG.isDebugEnabled()) {
+						LOG.debug("Var reference '{}' incorrect (ref pos is zero) and was removed from metadata", varRef);
+					}
+					return true;
+				}
+				return false;
+			}
+			return false;
+		});
 	}
 
 	@Nullable
@@ -458,13 +471,15 @@ public class ClassNode extends NotificationAttrNode
 		if (state == NOT_LOADED) {
 			return;
 		}
-		methods.forEach(MethodNode::unload);
-		innerClasses.forEach(ClassNode::unload);
-		fields.forEach(FieldNode::unload);
-		unloadAttributes();
-		setState(NOT_LOADED);
-		this.loadStage = LoadStage.NONE;
-		this.smali = null;
+		synchronized (clsInfo) { // decompilation sync
+			methods.forEach(MethodNode::unload);
+			innerClasses.forEach(ClassNode::unload);
+			fields.forEach(FieldNode::unload);
+			unloadAttributes();
+			setState(NOT_LOADED);
+			this.loadStage = LoadStage.NONE;
+			this.smali = null;
+		}
 	}
 
 	private void buildCache() {

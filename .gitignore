@@ -21,6 +21,7 @@ build/
 classes/
 idea/
 .gradle/
+.kotlin/
 node_modules/
 .vscode/
 
@@ -31,6 +32,7 @@ jadx-output/
 *.jadx
 
 *.class
+*.jar
 *.dump
 *.log
 *.cfg

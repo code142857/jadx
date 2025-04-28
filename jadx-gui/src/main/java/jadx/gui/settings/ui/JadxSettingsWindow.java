@@ -42,7 +42,6 @@ import javax.swing.WindowConstants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 
 import jadx.api.CommentsLevel;
@@ -57,6 +56,7 @@ import jadx.api.args.UseSourceNameAsClassNameAlias;
 import jadx.api.plugins.events.JadxEvents;
 import jadx.api.plugins.events.types.ReloadSettingsWindow;
 import jadx.api.plugins.gui.ISettingsGroup;
+import jadx.core.utils.GsonUtils;
 import jadx.gui.settings.JadxSettings;
 import jadx.gui.settings.JadxSettingsAdapter;
 import jadx.gui.settings.JadxUpdateChannel;
@@ -91,6 +91,7 @@ public class JadxSettingsWindow extends JDialog {
 
 	private transient boolean needReload = false;
 	private transient SettingsTree tree;
+	private List<ISettingsGroup> groups;
 
 	public JadxSettingsWindow(MainWindow mainWindow, JadxSettings settings) {
 		this.mainWindow = mainWindow;
@@ -116,6 +117,7 @@ public class JadxSettingsWindow extends JDialog {
 
 	private void reloadUI() {
 		int[] selection = tree.getSelectionRows();
+		closeGroups(false);
 		getContentPane().removeAll();
 		initUI();
 		// wait for other events to process
@@ -128,7 +130,7 @@ public class JadxSettingsWindow extends JDialog {
 	private void initUI() {
 		JPanel wrapGroupPanel = new JPanel(new BorderLayout(10, 10));
 
-		List<ISettingsGroup> groups = new ArrayList<>();
+		groups = new ArrayList<>();
 		groups.add(makeDecompilationGroup());
 		groups.add(makeDeobfuscationGroup());
 		groups.add(makeRenameGroup());
@@ -142,6 +144,7 @@ public class JadxSettingsWindow extends JDialog {
 
 		tree = new SettingsTree();
 		tree.init(wrapGroupPanel, groups);
+		tree.setFocusable(true);
 		JScrollPane leftPane = new JScrollPane(tree);
 		leftPane.setBorder(BorderFactory.createEmptyBorder(10, 10, 3, 3));
 
@@ -302,11 +305,18 @@ public class JadxSettingsWindow extends JDialog {
 			needReload();
 		});
 
+		JSpinner repeatLimit = new JSpinner(new SpinnerNumberModel(settings.getSourceNameRepeatLimit(), 1, Integer.MAX_VALUE, 1));
+		repeatLimit.addChangeListener(e -> {
+			settings.setSourceNameRepeatLimit((Integer) repeatLimit.getValue());
+			needReload();
+		});
+
 		SettingsGroup group = new SettingsGroup(NLS.str("preferences.rename"));
 		group.addRow(NLS.str("preferences.rename_case"), renameCaseSensitive);
 		group.addRow(NLS.str("preferences.rename_valid"), renameValid);
 		group.addRow(NLS.str("preferences.rename_printable"), renamePrintable);
 		group.addRow(NLS.str("preferences.rename_use_source_name_as_class_name_alias"), useSourceNameAsClassNameAlias);
+		group.addRow(NLS.str("preferences.rename_source_name_repeat_limit"), repeatLimit);
 		return group;
 	}
 
@@ -682,7 +692,7 @@ public class JadxSettingsWindow extends JDialog {
 		sizeLimit.addChangeListener(ev -> settings.setSrhResourceSkipSize((Integer) sizeLimit.getValue()));
 
 		JTextField fileExtField = new JTextField();
-		fileExtField.getDocument().addDocumentListener(new DocumentUpdateListener((ev) -> {
+		fileExtField.getDocument().addDocumentListener(new DocumentUpdateListener(ev -> {
 			String ext = fileExtField.getText();
 			settings.setSrhResourceFileExt(ext);
 		}));
@@ -695,7 +705,14 @@ public class JadxSettingsWindow extends JDialog {
 		return searchGroup;
 	}
 
+	private void closeGroups(boolean save) {
+		for (ISettingsGroup group : groups) {
+			group.close(save);
+		}
+	}
+
 	private void save() {
+		closeGroups(true);
 		settings.sync();
 		enableComponents(this, false);
 		SwingUtilities.invokeLater(() -> {
@@ -715,6 +732,7 @@ public class JadxSettingsWindow extends JDialog {
 	}
 
 	private void cancel() {
+		closeGroups(false);
 		JadxSettingsAdapter.fill(settings, startSettings);
 		mainWindow.loadSettings();
 		dispose();
@@ -747,7 +765,7 @@ public class JadxSettingsWindow extends JDialog {
 		settingsJson.remove("lastOpenFilePath");
 		settingsJson.remove("lastSaveFilePath");
 		settingsJson.remove("recentProjects");
-		String settingsText = new GsonBuilder().setPrettyPrinting().create().toJson(settingsJson);
+		String settingsText = GsonUtils.buildGson().toJson(settingsJson);
 		Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
 		StringSelection selection = new StringSelection(settingsText);
 		clipboard.setContents(selection, selection);

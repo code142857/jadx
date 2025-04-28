@@ -5,7 +5,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import org.jetbrains.annotations.Nullable;
@@ -17,12 +16,13 @@ import jadx.api.metadata.ICodeAnnotation;
 import jadx.api.metadata.ICodeNodeRef;
 import jadx.api.metadata.annotations.NodeDeclareRef;
 import jadx.gui.jobs.SimpleTask;
-import jadx.gui.jobs.TaskStatus;
+import jadx.gui.jobs.TaskWithExtraOnFinish;
 import jadx.gui.treemodel.JClass;
 import jadx.gui.treemodel.JNode;
 import jadx.gui.ui.MainWindow;
 import jadx.gui.ui.codearea.EditorViewState;
 import jadx.gui.utils.JumpPosition;
+import jadx.gui.utils.UiUtils;
 
 public class TabsController {
 	private static final Logger LOG = LoggerFactory.getLogger(TabsController.class);
@@ -37,6 +37,7 @@ public class TabsController {
 
 	public TabsController(MainWindow mainWindow) {
 		this.mainWindow = mainWindow;
+		// addListener(new LogTabStates());
 	}
 
 	public MainWindow getMainWindow() {
@@ -76,6 +77,10 @@ public class TabsController {
 	}
 
 	public void selectTab(JNode node) {
+		if (selectedTab != null && selectedTab.getNode() == node) {
+			// already selected
+			return;
+		}
 		TabBlueprint blueprint = openTab(node);
 		selectedTab = blueprint;
 		listeners.forEach(l -> l.onTabSelect(blueprint));
@@ -113,16 +118,12 @@ public class TabsController {
 
 	private void loadCodeWithUIAction(JClass cls, Runnable action) {
 		SimpleTask loadTask = cls.getLoadTask();
-		mainWindow.getBackgroundExecutor().execute(
-				new SimpleTask(loadTask.getTitle(),
-						loadTask.getJobs(),
-						status -> {
-							Consumer<TaskStatus> onFinish = loadTask.getOnFinish();
-							if (onFinish != null) {
-								onFinish.accept(status);
-							}
-							action.run();
-						}));
+		if (loadTask == null) {
+			// already loaded
+			UiUtils.uiRun(action);
+			return;
+		}
+		mainWindow.getBackgroundExecutor().execute(new TaskWithExtraOnFinish(loadTask, action));
 	}
 
 	/**
@@ -145,10 +146,11 @@ public class TabsController {
 	 * Prefer {@link TabsController#codeJump(JNode)} method
 	 */
 	public void codeJump(JumpPosition pos) {
+		JumpPosition currentPosition = mainWindow.getTabbedPane().getCurrentPosition();
 		if (selectedTab == null || selectedTab.getNode() != pos.getNode()) {
 			selectTab(pos.getNode());
 		}
-		listeners.forEach(l -> l.onTabCodeJump(selectedTab, pos));
+		listeners.forEach(l -> l.onTabCodeJump(selectedTab, currentPosition, pos));
 	}
 
 	public void smaliJump(JClass cls, int pos, boolean debugMode) {

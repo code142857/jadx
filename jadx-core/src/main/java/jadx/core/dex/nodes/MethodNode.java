@@ -366,14 +366,11 @@ public class MethodNode extends NotificationAttrNode implements IMethodDetails, 
 
 	public void setBasicBlocks(List<BlockNode> blocks) {
 		this.blocks = blocks;
-		updateBlockIds(blocks);
+		updateBlockPositions();
 	}
 
-	public void updateBlockIds(List<BlockNode> blocks) {
-		int count = blocks.size();
-		for (int i = 0; i < count; i++) {
-			blocks.get(i).setId(i);
-		}
+	public void updateBlockPositions() {
+		BlockNode.updateBlockPositions(blocks);
 	}
 
 	public int getNextBlockCId() {
@@ -406,6 +403,10 @@ public class MethodNode extends NotificationAttrNode implements IMethodDetails, 
 			return successors.get(0).equals(exitBlock);
 		}
 		return exitBlock.getPredecessors().contains(block);
+	}
+
+	public void resetLoops() {
+		this.loops = new ArrayList<>();
 	}
 
 	public void registerLoop(LoopInfo loop) {

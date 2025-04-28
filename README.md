@@ -86,7 +86,7 @@ and also packed to `build/jadx-<version>.zip`
 
 ### Usage
 ```
-jadx[-gui] [command] [options] <input files> (.apk, .dex, .jar, .class, .smali, .zip, .aar, .arsc, .aab, .xapk, .jadx.kts)
+jadx[-gui] [command] [options] <input files> (.apk, .dex, .jar, .class, .smali, .zip, .aar, .arsc, .aab, .xapk, .apkm, .jadx.kts)
 commands (use '<command> --help' for command options):
   plugins	  - manage jadx plugins
 
@@ -144,6 +144,7 @@ options:
                                            'always' - always use source name if it's available
                                            'if-better' - use source name if it seems better than the current one
                                            'never' - never use source name, even if it's available
+  --source-name-repeat-limit             - allow using source name if it appears less than a limit number, default: 10
   --use-kotlin-methods-for-var-names    - use kotlin intrinsic methods to rename variables, values: disable, apply, apply-and-hide, default: apply
   --rename-flags                        - fix options (comma-separated list of):
                                            'case' - fix case sensitivity issues (according to --fs-case-sensitive option),
@@ -203,6 +204,24 @@ Examples:
   jadx -Pdex-input.verify-checksum=no app.apk
 ```
 These options also work in jadx-gui running from command line and override options from preferences' dialog
+
+Usage for `plugins` command
+```
+usage: plugins [options]
+options:
+  -i, --install <locationId>      - install plugin with locationId
+  -j, --install-jar <path-to.jar> - install plugin from jar file
+  -l, --list                      - list installed plugins
+  -a, --available                 - list available plugins from jadx-plugins-list (aka marketplace)
+  -u, --update                    - update installed plugins
+  --uninstall <pluginId>          - uninstall plugin with pluginId
+  --disable <pluginId>            - disable plugin with pluginId
+  --enable <pluginId>             - enable plugin with pluginId
+  --list-all                      - list all plugins including bundled and dropins
+  --list-versions <locationId>    - fetch latest versions of plugin from locationId (will download all artefacts, limited to 10)
+  -h, --help                      - print this help
+```
+
 
 ### Troubleshooting
 Please check wiki page [Troubleshooting Q&A](https://github.com/skylot/jadx/wiki/Troubleshooting-Q&A)

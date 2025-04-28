@@ -40,6 +40,7 @@ import jadx.gui.ui.MainWindow;
 import jadx.gui.utils.Link;
 import jadx.gui.utils.NLS;
 import jadx.gui.utils.UiUtils;
+import jadx.gui.utils.plugins.CloseablePlugins;
 import jadx.plugins.tools.JadxPluginsList;
 import jadx.plugins.tools.JadxPluginsTools;
 import jadx.plugins.tools.data.JadxPluginMetadata;
@@ -51,11 +52,11 @@ class PluginSettingsGroup implements ISettingsGroup {
 	private final MainWindow mainWindow;
 	private final String title;
 	private final List<ISettingsGroup> subGroups = new ArrayList<>();
-	private final List<PluginContext> collectedPlugins;
+	private final CloseablePlugins collectedPlugins;
 
 	private JPanel detailsPanel;
 
-	public PluginSettingsGroup(PluginSettings pluginSettings, MainWindow mainWindow, List<PluginContext> collectedPlugins) {
+	public PluginSettingsGroup(PluginSettings pluginSettings, MainWindow mainWindow, CloseablePlugins collectedPlugins) {
 		this.pluginsSettings = pluginSettings;
 		this.mainWindow = mainWindow;
 		this.title = NLS.str("preferences.plugins");
@@ -78,6 +79,12 @@ class PluginSettingsGroup implements ISettingsGroup {
 		return buildMainSettingsPage();
 	}
 
+	@Override
+	public void close(boolean save) {
+		subGroups.forEach(subGroup -> subGroup.close(save));
+		collectedPlugins.close();
+	}
+
 	private JPanel buildMainSettingsPage() {
 		JButton installPluginBtn = new JButton(NLS.str("preferences.plugins.install"));
 		installPluginBtn.addActionListener(ev -> pluginsSettings.addPlugin());
@@ -96,6 +103,7 @@ class PluginSettingsGroup implements ISettingsGroup {
 		pluginList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 		pluginList.setCellRenderer(new PluginsListCellRenderer());
 		pluginList.addListSelectionListener(ev -> onSelection(pluginList.getSelectedValue()));
+		pluginList.setFocusable(true);
 
 		JScrollPane scrollPane = new JScrollPane(pluginList);
 		scrollPane.setMinimumSize(new Dimension(80, 120));
@@ -123,13 +131,13 @@ class PluginSettingsGroup implements ISettingsGroup {
 
 	private void applyData(DefaultListModel<BasePluginListNode> listModel) {
 		List<JadxPluginMetadata> installed = JadxPluginsTools.getInstance().getInstalled();
-		List<BasePluginListNode> nodes = new ArrayList<>(installed.size() + collectedPlugins.size());
+		List<BasePluginListNode> nodes = new ArrayList<>(installed.size() + collectedPlugins.getList().size());
 		Set<String> installedSet = new HashSet<>(installed.size());
 		for (JadxPluginMetadata pluginMetadata : installed) {
 			installedSet.add(pluginMetadata.getPluginId());
 			nodes.add(new InstalledPluginNode(pluginMetadata));
 		}
-		for (PluginContext plugin : collectedPlugins) {
+		for (PluginContext plugin : collectedPlugins.getList()) {
 			if (!installedSet.contains(plugin.getPluginId())) {
 				nodes.add(new LoadedPluginNode(plugin));
 			}
@@ -276,8 +284,7 @@ class PluginSettingsGroup implements ISettingsGroup {
 
 			titleLbl = new JLabel();
 			titleLbl.setHorizontalAlignment(SwingConstants.CENTER);
-			titleLbl.setEnabled(false);
-			versionLbl.setPreferredSize(new Dimension(40, 10));
+			titleLbl.setPreferredSize(new Dimension(40, 10));
 		}
 
 		@Override
@@ -290,6 +297,7 @@ class PluginSettingsGroup implements ISettingsGroup {
 			nameLbl.setText(plugin.getTitle());
 			nameLbl.setToolTipText(plugin.getLocationId());
 			versionLbl.setText(Utils.getOrElse(plugin.getVersion(), ""));
+			panel.getAccessibleContext().setAccessibleName(plugin.getTitle());
 
 			boolean enabled = !plugin.isDisabled();
 			nameLbl.setEnabled(enabled);

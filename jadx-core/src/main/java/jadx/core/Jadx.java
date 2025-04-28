@@ -47,12 +47,14 @@ import jadx.core.dex.visitors.ReplaceNewArray;
 import jadx.core.dex.visitors.ShadowFieldVisitor;
 import jadx.core.dex.visitors.SignatureProcessor;
 import jadx.core.dex.visitors.SimplifyVisitor;
+import jadx.core.dex.visitors.blocks.BlockFinisher;
 import jadx.core.dex.visitors.blocks.BlockProcessor;
 import jadx.core.dex.visitors.blocks.BlockSplitter;
 import jadx.core.dex.visitors.debuginfo.DebugInfoApplyVisitor;
 import jadx.core.dex.visitors.debuginfo.DebugInfoAttachVisitor;
 import jadx.core.dex.visitors.finaly.MarkFinallyVisitor;
 import jadx.core.dex.visitors.fixaccessmodifiers.FixAccessModifiers;
+import jadx.core.dex.visitors.gradle.NonFinalResIdsVisitor;
 import jadx.core.dex.visitors.kotlin.ProcessKotlinInternals;
 import jadx.core.dex.visitors.prepare.AddAndroidConstants;
 import jadx.core.dex.visitors.prepare.CollectConstValues;
@@ -100,7 +102,6 @@ public class Jadx {
 		passes.add(new SignatureProcessor());
 		passes.add(new OverrideMethodVisitor());
 		passes.add(new AddAndroidConstants());
-		passes.add(new CollectConstValues());
 
 		// rename and deobfuscation
 		passes.add(new DeobfuscatorVisitor());
@@ -109,6 +110,7 @@ public class Jadx {
 		passes.add(new SaveDeobfMapping());
 
 		passes.add(new UsageInfoVisitor());
+		passes.add(new CollectConstValues());
 		passes.add(new ProcessAnonymous());
 		passes.add(new ProcessMethodsForInline());
 		return passes;
@@ -131,6 +133,7 @@ public class Jadx {
 		// blocks IR
 		passes.add(new BlockSplitter());
 		passes.add(new BlockProcessor());
+		passes.add(new BlockFinisher());
 		if (args.isRawCFGOutput()) {
 			passes.add(DotGraphVisitor.dumpRaw());
 		}
@@ -184,6 +187,7 @@ public class Jadx {
 
 		passes.add(new EnumVisitor());
 		passes.add(new FixSwitchOverEnum());
+		passes.add(new NonFinalResIdsVisitor());
 		passes.add(new ExtractFieldInit());
 		passes.add(new FixAccessModifiers());
 		passes.add(new ClassModifier());

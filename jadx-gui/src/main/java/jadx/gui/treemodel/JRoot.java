@@ -56,7 +56,7 @@ public class JRoot extends JNode {
 		String splitPathStr = Pattern.quote(File.separator);
 		for (ResourceFile rf : resources) {
 			String rfName;
-			if (rf.getZipRef() != null) {
+			if (rf.getZipEntry() != null) {
 				rfName = rf.getDeobfName();
 			} else {
 				rfName = new File(rf.getDeobfName()).getName();
@@ -64,19 +64,17 @@ public class JRoot extends JNode {
 			String[] parts = new File(rfName).getPath().split(splitPathStr);
 			JResource curRf = root;
 			int count = parts.length;
-			for (int i = 0; i < count; i++) {
+			for (int i = 0; i < count - 1; i++) {
 				String name = parts[i];
 				JResource subRF = getResourceByName(curRf, name);
 				if (subRF == null) {
-					if (i != count - 1) {
-						subRF = new JResource(null, name, JResType.DIR);
-					} else {
-						subRF = new JResource(rf, rf.getDeobfName(), name, JResType.FILE);
-					}
+					subRF = new JResource(null, name, JResType.DIR);
 					curRf.addSubNode(subRF);
 				}
 				curRf = subRF;
 			}
+			JResource leaf = new JResource(rf, rf.getDeobfName(), parts[count - 1], JResType.FILE);
+			curRf.addSubNode(leaf);
 		}
 		root.sortSubNodes();
 		root.update();
@@ -159,6 +157,11 @@ public class JRoot extends JNode {
 	@Override
 	public JClass getJParent() {
 		return null;
+	}
+
+	@Override
+	public String getID() {
+		return "JRoot";
 	}
 
 	@Override

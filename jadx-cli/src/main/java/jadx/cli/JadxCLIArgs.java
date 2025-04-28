@@ -1,7 +1,6 @@
 package jadx.cli;
 
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -35,8 +34,8 @@ import jadx.core.utils.files.FileUtils;
 
 public class JadxCLIArgs {
 
-	@Parameter(description = "<input files> (.apk, .dex, .jar, .class, .smali, .zip, .aar, .arsc, .aab, .xapk, .jadx.kts)")
-	protected List<String> files = new ArrayList<>(1);
+	@Parameter(description = "<input files> (.apk, .dex, .jar, .class, .smali, .zip, .aar, .arsc, .aab, .xapk, .apkm, .jadx.kts)")
+	protected List<String> files;
 
 	@Parameter(names = { "-d", "--output-dir" }, description = "output directory")
 	protected String outDir;
@@ -201,6 +200,12 @@ public class JadxCLIArgs {
 	protected UseSourceNameAsClassNameAlias useSourceNameAsClassNameAlias = null;
 
 	@Parameter(
+			names = { "--source-name-repeat-limit" },
+			description = "allow using source name if it appears less than a limit number"
+	)
+	protected int sourceNameRepeatLimit = 10;
+
+	@Parameter(
 			names = { "--use-kotlin-methods-for-var-names" },
 			description = "use kotlin intrinsic methods to rename variables, values: disable, apply, apply-and-hide",
 			converter = UseKotlinMethodsForVarNamesConverter.class
@@ -264,6 +269,9 @@ public class JadxCLIArgs {
 	@Parameter(names = { "-q", "--quiet" }, description = "turn off output (set --log-level to QUIET)")
 	protected boolean quiet = false;
 
+	@Parameter(names = { "--disable-plugins" }, description = "comma separated list of plugin ids to disable")
+	protected String disablePlugins = "";
+
 	@Parameter(names = { "--version" }, description = "print jadx version")
 	protected boolean printVersion = false;
 
@@ -274,29 +282,11 @@ public class JadxCLIArgs {
 	protected Map<String, String> pluginOptions = new HashMap<>();
 
 	public boolean processArgs(String[] args) {
-		JCommanderWrapper<JadxCLIArgs> jcw = new JCommanderWrapper<>(this);
+		JCommanderWrapper jcw = new JCommanderWrapper(this);
 		return jcw.parse(args) && process(jcw);
 	}
 
-	/**
-	 * Set values only for options provided in cmd.
-	 * Used to merge saved options and options passed in command line.
-	 */
-	public boolean overrideProvided(String[] args) {
-		JCommanderWrapper<JadxCLIArgs> jcw = new JCommanderWrapper<>(newInstance());
-		if (!jcw.parse(args)) {
-			return false;
-		}
-		jcw.overrideProvided(this);
-		return process(jcw);
-	}
-
-	protected JadxCLIArgs newInstance() {
-		return new JadxCLIArgs();
-	}
-
-	private boolean process(JCommanderWrapper<JadxCLIArgs> jcw) {
-		files.addAll(jcw.getUnknownOptions());
+	public boolean process(JCommanderWrapper jcw) {
 		if (jcw.processCommands()) {
 			return false;
 		}
@@ -349,6 +339,7 @@ public class JadxCLIArgs {
 		args.setDeobfuscationMaxLength(deobfuscationMaxLength);
 		args.setDeobfuscationWhitelist(Arrays.asList(deobfuscationWhitelistStr.split(" ")));
 		args.setUseSourceNameAsClassNameAlias(getUseSourceNameAsClassNameAlias());
+		args.setSourceNameRepeatLimit(sourceNameRepeatLimit);
 		args.setUseKotlinMethodsForVarNames(useKotlinMethodsForVarNames);
 		args.setResourceNameSource(resourceNameSource);
 		args.setEscapeUnicode(escapeUnicode);
@@ -370,11 +361,16 @@ public class JadxCLIArgs {
 		args.setIntegerFormat(integerFormat);
 		args.setUseDxInput(useDx);
 		args.setPluginOptions(pluginOptions);
+		args.setDisabledPlugins(Arrays.stream(disablePlugins.split(",")).map(String::trim).collect(Collectors.toSet()));
 		return args;
 	}
 
 	public List<String> getFiles() {
 		return files;
+	}
+
+	public void setFiles(List<String> files) {
+		this.files = files;
 	}
 
 	public String getOutDir() {
@@ -504,6 +500,10 @@ public class JadxCLIArgs {
 		}
 	}
 
+	public int getSourceNameRepeatLimit() {
+		return sourceNameRepeatLimit;
+	}
+
 	/**
 	 * @deprecated Use {@link #getUseSourceNameAsClassNameAlias()} instead.
 	 */
@@ -578,6 +578,10 @@ public class JadxCLIArgs {
 
 	public Map<String, String> getPluginOptions() {
 		return pluginOptions;
+	}
+
+	public String getDisablePlugins() {
+		return disablePlugins;
 	}
 
 	static class RenameConverter implements IStringConverter<Set<RenameEnum>> {

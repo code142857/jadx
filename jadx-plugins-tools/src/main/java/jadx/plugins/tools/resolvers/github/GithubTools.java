@@ -10,10 +10,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 
 import jadx.plugins.tools.resolvers.github.data.Release;
+
+import static jadx.core.utils.GsonUtils.buildGson;
 
 public class GithubTools {
 	private static final String GITHUB_API_URL = "https://api.github.com/";
@@ -30,13 +31,19 @@ public class GithubTools {
 			// get latest version
 			return get(projectUrl + "/releases/latest", RELEASE_TYPE);
 		}
-		// search version among all releases (by name)
-		List<Release> releases = get(projectUrl + "/releases", RELEASE_LIST_TYPE);
+		// search version in other releases (by name)
+		List<Release> releases = fetchReleases(info, 1, 50);
 		return releases.stream()
 				.filter(r -> r.getName().equals(version))
 				.findFirst()
 				.orElseThrow(() -> new RuntimeException("Release with version: " + version + " not found."
 						+ " Available versions: " + releases.stream().map(Release::getName).collect(Collectors.joining(", "))));
+	}
+
+	public static List<Release> fetchReleases(LocationInfo info, int page, int perPage) {
+		String projectUrl = GITHUB_API_URL + "repos/" + info.getOwner() + "/" + info.getProject();
+		String requestUrl = projectUrl + "/releases?page=" + page + "&per_page=" + perPage;
+		return get(requestUrl, RELEASE_LIST_TYPE);
 	}
 
 	private static <T> T get(String url, Type type) {
@@ -53,7 +60,7 @@ public class GithubTools {
 			throw new RuntimeException("Request failed, url: " + url, e);
 		}
 		try (Reader reader = new InputStreamReader(con.getInputStream(), StandardCharsets.UTF_8)) {
-			return new Gson().fromJson(reader, type);
+			return buildGson().fromJson(reader, type);
 		} catch (Exception e) {
 			throw new RuntimeException("Failed to parse response, url: " + url, e);
 		}

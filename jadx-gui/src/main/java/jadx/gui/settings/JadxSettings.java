@@ -61,6 +61,7 @@ public class JadxSettings extends JadxCLIArgs {
 	static final Set<String> SKIP_FIELDS = new HashSet<>(Arrays.asList(
 			"files", "input", "outDir", "outDirSrc", "outDirRes", "outputFormat",
 			"deobfuscationMapFile",
+			"disablePlugins",
 			"verbose", "quiet", "logLevel",
 			"printVersion", "printHelp"));
 
@@ -151,6 +152,10 @@ public class JadxSettings extends JadxCLIArgs {
 		JadxSettings jadxSettings = new JadxSettings();
 		jadxSettings.fixOnLoad();
 		return jadxSettings;
+	}
+
+	public JadxSettings() {
+		this.logLevel = LogHelper.LogLevelEnum.INFO;
 	}
 
 	public void sync() {
@@ -260,8 +265,10 @@ public class JadxSettings extends JadxCLIArgs {
 
 	public void saveWindowPos(Window window) {
 		WindowLocation pos = new WindowLocation(window.getClass().getSimpleName(), window.getBounds());
-		windowPos.put(pos.getWindowId(), pos);
-		partialSync(settings -> settings.windowPos = windowPos);
+		WindowLocation prevPos = windowPos.put(pos.getWindowId(), pos);
+		if (prevPos == null || !prevPos.equals(pos)) {
+			partialSync(settings -> settings.windowPos = windowPos);
+		}
 	}
 
 	public boolean loadWindowPos(Window window) {
@@ -403,6 +410,10 @@ public class JadxSettings extends JadxCLIArgs {
 
 	public void setUseSourceNameAsClassNameAlias(UseSourceNameAsClassNameAlias useSourceNameAsClassNameAlias) {
 		this.useSourceNameAsClassNameAlias = useSourceNameAsClassNameAlias;
+	}
+
+	public void setSourceNameRepeatLimit(int sourceNameRepeatLimit) {
+		this.sourceNameRepeatLimit = sourceNameRepeatLimit;
 	}
 
 	/**
@@ -860,10 +871,5 @@ public class JadxSettings extends JadxCLIArgs {
 		if (deobfuscationUseSourceNameAsAlias != null) {
 			useSourceNameAsClassNameAlias = UseSourceNameAsClassNameAlias.create(deobfuscationUseSourceNameAsAlias);
 		}
-	}
-
-	@Override
-	protected JadxCLIArgs newInstance() {
-		return new JadxSettings();
 	}
 }

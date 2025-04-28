@@ -1,6 +1,5 @@
 package jadx.cli.tools;
 
-import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -11,7 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,8 +17,10 @@ import org.slf4j.LoggerFactory;
 import jadx.api.JadxArgs;
 import jadx.core.dex.nodes.RootNode;
 import jadx.core.utils.android.TextResMapFile;
-import jadx.core.utils.files.ZipFile;
 import jadx.core.xmlgen.ResTableBinaryParser;
+import jadx.zip.IZipEntry;
+import jadx.zip.ZipContent;
+import jadx.zip.ZipReader;
 
 import static jadx.core.utils.files.FileUtils.expandDirs;
 
@@ -54,24 +54,25 @@ public class ConvertArscFile {
 		LOG.info("Input entries count: {}", resMap.size());
 
 		RootNode root = new RootNode(new JadxArgs()); // not really needed
+		ZipReader zipReader = new ZipReader();
 		rewritesCount = 0;
 		for (Path resFile : inputResFiles) {
 			ResTableBinaryParser resTableParser = new ResTableBinaryParser(root, true);
 			if (resFile.getFileName().toString().endsWith(".jar")) {
 				// Load resources.arsc from android.jar
-				try (ZipFile zip = new ZipFile(resFile.toFile())) {
-					ZipEntry entry = zip.getEntry("resources.arsc");
+				try (ZipContent zip = zipReader.open(resFile.toFile())) {
+					IZipEntry entry = zip.searchEntry("resources.arsc");
 					if (entry == null) {
 						LOG.error("Failed to load \"resources.arsc\" from {}", resFile);
 						continue;
 					}
-					try (InputStream inputStream = zip.getInputStream(entry)) {
+					try (InputStream inputStream = entry.getInputStream()) {
 						resTableParser.decode(inputStream);
 					}
 				}
 			} else {
 				// Load resources.arsc from extracted file
-				try (InputStream inputStream = new BufferedInputStream(Files.newInputStream(resFile))) {
+				try (InputStream inputStream = Files.newInputStream(resFile)) {
 					resTableParser.decode(inputStream);
 				}
 			}

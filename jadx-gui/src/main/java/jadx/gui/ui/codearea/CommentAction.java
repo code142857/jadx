@@ -1,9 +1,12 @@
 package jadx.gui.ui.codearea;
 
 import java.awt.event.ActionEvent;
+import java.util.Objects;
 
 import javax.swing.event.PopupMenuEvent;
 
+import org.fife.ui.rsyntaxtextarea.Token;
+import org.fife.ui.rsyntaxtextarea.TokenTypes;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,6 +16,7 @@ import jadx.api.JavaMethod;
 import jadx.api.JavaNode;
 import jadx.api.data.ICodeComment;
 import jadx.api.data.impl.JadxCodeComment;
+import jadx.api.data.impl.JadxCodeData;
 import jadx.api.data.impl.JadxCodeRef;
 import jadx.api.data.impl.JadxNodeRef;
 import jadx.api.metadata.ICodeAnnotation;
@@ -22,6 +26,7 @@ import jadx.api.metadata.ICodeNodeRef;
 import jadx.api.metadata.annotations.InsnCodeOffset;
 import jadx.api.metadata.annotations.NodeDeclareRef;
 import jadx.gui.JadxWrapper;
+import jadx.gui.settings.JadxProject;
 import jadx.gui.treemodel.JClass;
 import jadx.gui.ui.action.ActionModel;
 import jadx.gui.ui.action.JadxGuiAction;
@@ -34,9 +39,10 @@ public class CommentAction extends CodeAreaAction implements DefaultPopupMenuLis
 	private static final long serialVersionUID = 4753838562204629112L;
 
 	private static final Logger LOG = LoggerFactory.getLogger(CommentAction.class);
-	private final boolean enabled;
 
-	private ICodeComment actionComment;
+	private final boolean enabled;
+	private @Nullable ICodeComment actionComment;
+	private boolean updateComment;
 
 	public CommentAction(CodeArea codeArea) {
 		super(ActionModel.CODE_COMMENT, codeArea);
@@ -45,13 +51,35 @@ public class CommentAction extends CodeAreaAction implements DefaultPopupMenuLis
 
 	@Override
 	public void popupMenuWillBecomeVisible(PopupMenuEvent e) {
-		if (enabled) {
-			ICodeComment codeComment = getCommentRef(UiUtils.getOffsetAtMousePosition(codeArea));
-			setEnabled(codeComment != null);
-			this.actionComment = codeComment;
+		if (enabled && updateCommentAction(UiUtils.getOffsetAtMousePosition(codeArea))) {
+			setNameAndDesc(updateComment ? NLS.str("popup.update_comment") : NLS.str("popup.add_comment"));
+			setEnabled(true);
 		} else {
 			setEnabled(false);
 		}
+	}
+
+	@Override
+	public void popupMenuCanceled(PopupMenuEvent e) {
+		actionComment = null;
+		setEnabled(false);
+	}
+
+	private boolean updateCommentAction(int pos) {
+		ICodeComment codeComment = getCommentRef(pos);
+		if (codeComment == null) {
+			actionComment = null;
+			return false;
+		}
+		ICodeComment exitsComment = searchForExistComment(codeComment);
+		if (exitsComment != null) {
+			actionComment = exitsComment;
+			updateComment = true;
+		} else {
+			actionComment = codeComment;
+			updateComment = false;
+		}
+		return true;
 	}
 
 	@Override
@@ -59,20 +87,33 @@ public class CommentAction extends CodeAreaAction implements DefaultPopupMenuLis
 		if (!enabled) {
 			return;
 		}
-
 		if (JadxGuiAction.isSource(e)) {
-			showCommentDialog(getCommentRef(codeArea.getCaretPosition()));
-		} else {
-			showCommentDialog(this.actionComment);
+			updateCommentAction(codeArea.getCaretPosition());
 		}
-	}
-
-	private void showCommentDialog(ICodeComment codeComment) {
-		if (codeComment == null) {
+		if (actionComment == null) {
 			UiUtils.showMessageBox(codeArea.getMainWindow(), NLS.str("msg.cant_add_comment"));
 			return;
 		}
-		CommentDialog.show(codeArea, codeComment);
+		CommentDialog.show(codeArea, actionComment, updateComment);
+	}
+
+	private @Nullable ICodeComment searchForExistComment(ICodeComment blankComment) {
+		try {
+			JadxProject project = codeArea.getProject();
+			JadxCodeData codeData = project.getCodeData();
+			if (codeData == null || codeData.getComments().isEmpty()) {
+				return null;
+			}
+			for (ICodeComment comment : codeData.getComments()) {
+				if (Objects.equals(comment.getNodeRef(), blankComment.getNodeRef())
+						&& Objects.equals(comment.getCodeRef(), blankComment.getCodeRef())) {
+					return comment;
+				}
+			}
+		} catch (Exception e) {
+			LOG.error("Error searching for exists comment", e);
+		}
+		return null;
 	}
 
 	/**
@@ -118,8 +159,7 @@ public class CommentAction extends CodeAreaAction implements DefaultPopupMenuLis
 			}
 
 			// check if at comment above node definition
-			String lineStr = codeArea.getLineAt(pos).trim();
-			if (lineStr.startsWith("//") || lineStr.startsWith("/*")) {
+			if (isCommentLine(pos)) {
 				ICodeNodeRef nodeRef = metadata.searchDown(pos, (off, ann) -> {
 					if (off > pos && ann.getAnnType() == AnnType.DECLARATION) {
 						return ((NodeDeclareRef) ann).getNode();
@@ -132,8 +172,38 @@ public class CommentAction extends CodeAreaAction implements DefaultPopupMenuLis
 				}
 			}
 		} catch (Exception e) {
-			LOG.error("Failed to add comment at: " + pos, e);
+			LOG.error("Failed to add comment at: {}", pos, e);
 		}
 		return null;
+	}
+
+	/**
+	 * Check if all tokens are 'comment' in line at 'pos'
+	 */
+	private boolean isCommentLine(int pos) {
+		try {
+			int line = codeArea.getLineOfOffset(pos);
+			Token lineTokens = codeArea.getTokenListForLine(line);
+			boolean commentFound = false;
+			for (Token t = lineTokens; t != null; t = t.getNextToken()) {
+				if (t.isComment()) {
+					commentFound = true;
+				} else {
+					switch (t.getType()) {
+						case TokenTypes.WHITESPACE:
+						case TokenTypes.NULL:
+							// allowed tokens
+							break;
+
+						default:
+							return false;
+					}
+				}
+			}
+			return commentFound;
+		} catch (Exception e) {
+			LOG.warn("Failed to check for comment line", e);
+			return false;
+		}
 	}
 }

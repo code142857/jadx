@@ -41,6 +41,8 @@ import jadx.api.JadxArgs;
 import jadx.api.JadxDecompiler;
 import jadx.api.JadxInternalAccess;
 import jadx.api.JavaClass;
+import jadx.api.JavaMethod;
+import jadx.api.JavaVariable;
 import jadx.api.args.GeneratedRenamesMappingFileMode;
 import jadx.api.data.IJavaNodeRef;
 import jadx.api.data.impl.JadxCodeData;
@@ -48,8 +50,10 @@ import jadx.api.data.impl.JadxCodeRename;
 import jadx.api.data.impl.JadxNodeRef;
 import jadx.api.metadata.ICodeMetadata;
 import jadx.api.metadata.annotations.InsnCodeOffset;
+import jadx.api.metadata.annotations.VarNode;
 import jadx.core.dex.attributes.AFlag;
 import jadx.core.dex.nodes.ClassNode;
+import jadx.core.dex.nodes.FieldNode;
 import jadx.core.dex.nodes.MethodNode;
 import jadx.core.dex.nodes.RootNode;
 import jadx.core.utils.Utils;
@@ -444,13 +448,23 @@ public abstract class IntegrationTest extends TestUtils {
 		}
 	}
 
-	protected MethodNode getMethod(ClassNode cls, String method) {
+	protected MethodNode getMethod(ClassNode cls, String methodName) {
 		for (MethodNode mth : cls.getMethods()) {
-			if (mth.getName().equals(method)) {
+			if (mth.getName().equals(methodName)) {
 				return mth;
 			}
 		}
-		fail("Method not found " + method + " in class " + cls);
+		fail("Method not found " + methodName + " in class " + cls);
+		return null;
+	}
+
+	protected FieldNode getField(ClassNode cls, String fieldName) {
+		for (FieldNode fld : cls.getFields()) {
+			if (fld.getName().equals(fieldName)) {
+				return fld;
+			}
+		}
+		fail("Field not found " + fieldName + " in class " + cls);
 		return null;
 	}
 
@@ -513,7 +527,7 @@ public abstract class IntegrationTest extends TestUtils {
 	}
 
 	private void saveToJar(List<File> files, Path baseDir) throws IOException {
-		Path jarFile = Files.createTempFile(testDir, "tests-" + getTestName() + '-', ".jar");
+		Path jarFile = Files.createTempFile("tests-" + getTestName() + '-', ".jar");
 		try (JarOutputStream jar = new JarOutputStream(Files.newOutputStream(jarFile))) {
 			for (File file : files) {
 				Path fullPath = file.toPath();
@@ -645,5 +659,23 @@ public abstract class IntegrationTest extends TestUtils {
 			getArgs().setCodeData(codeData);
 		}
 		return codeData;
+	}
+
+	protected JavaClass toJavaClass(ClassNode cls) {
+		JavaClass javaClass = JadxInternalAccess.convertClassNode(jadxDecompiler, cls);
+		assertThat(javaClass).isNotNull();
+		return javaClass;
+	}
+
+	protected JavaMethod toJavaMethod(MethodNode mth) {
+		JavaMethod javaMethod = JadxInternalAccess.convertMethodNode(jadxDecompiler, mth);
+		assertThat(javaMethod).isNotNull();
+		return javaMethod;
+	}
+
+	protected JavaVariable toJavaVariable(VarNode varNode) {
+		JavaVariable javaVariable = (JavaVariable) jadxDecompiler.getJavaNodeByCodeAnnotation(null, varNode);
+		assertThat(javaVariable).isNotNull();
+		return javaVariable;
 	}
 }

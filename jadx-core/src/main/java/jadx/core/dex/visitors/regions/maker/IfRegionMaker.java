@@ -29,6 +29,7 @@ import jadx.core.dex.regions.conditions.IfInfo;
 import jadx.core.dex.regions.conditions.IfRegion;
 import jadx.core.dex.regions.loops.LoopRegion;
 import jadx.core.utils.BlockUtils;
+import jadx.core.utils.blocks.BlockSet;
 import jadx.core.utils.exceptions.JadxRuntimeException;
 
 import static jadx.core.utils.BlockUtils.isEqualPaths;
@@ -178,6 +179,8 @@ final class IfRegionMaker {
 			info.setOutBlock(null);
 			return info;
 		}
+		// init outblock, which will be used in isBadBranchBlock to compare with branch block
+		info.setOutBlock(BlockUtils.getPathCross(mth, thenBlock, elseBlock));
 		boolean badThen = isBadBranchBlock(info, thenBlock);
 		boolean badElse = isBadBranchBlock(info, elseBlock);
 		if (badThen && badElse) {
@@ -193,8 +196,6 @@ final class IfRegionMaker {
 			info = IfInfo.invert(info);
 			info = new IfInfo(info, elseBlock, null);
 			info.setOutBlock(thenBlock);
-		} else {
-			info.setOutBlock(BlockUtils.getPathCross(mth, thenBlock, elseBlock));
 		}
 		if (BlockUtils.isBackEdge(block, info.getOutBlock())) {
 			info.setOutBlock(null);
@@ -219,12 +220,16 @@ final class IfRegionMaker {
 				}
 			}
 		}
+		// if branch block itself is outblock
+		if (info.getOutBlock() != null) {
+			return block == info.getOutBlock();
+		}
 		return !allPathsFromIf(block, info);
 	}
 
 	private static boolean allPathsFromIf(BlockNode block, IfInfo info) {
 		List<BlockNode> preds = block.getPredecessors();
-		List<BlockNode> ifBlocks = info.getMergedBlocks();
+		BlockSet ifBlocks = info.getMergedBlocks();
 		for (BlockNode pred : preds) {
 			if (pred.contains(AFlag.LOOP_END)) {
 				// ignore loop back edge
@@ -395,6 +400,11 @@ final class IfRegionMaker {
 			skipBlocks.add(first);
 			return second;
 		}
+		if (BlockUtils.isDuplicateBlockPath(first, second)) {
+			first.add(AFlag.REMOVE);
+			skipBlocks.add(first);
+			return second;
+		}
 		BlockNode cross = BlockUtils.getPathCross(mth, first, second);
 		if (cross != null) {
 			BlockUtils.visitBlocksOnPath(mth, first, cross, skipBlocks::add);
@@ -460,48 +470,12 @@ final class IfRegionMaker {
 		if (successors.size() != 1) {
 			return null;
 		}
-
 		BlockNode next = successors.get(0);
-		if (next.getPredecessors().size() != 1) {
+		if (next.getPredecessors().size() != 1 || next.contains(AFlag.ADDED_TO_REGION)) {
 			return null;
 		}
-		if (next.contains(AFlag.ADDED_TO_REGION)) {
-			return null;
-		}
-		List<InsnNode> insns = block.getInstructions();
-		boolean pass = true;
 		List<InsnNode> forceInlineInsns = new ArrayList<>();
-		if (!insns.isEmpty()) {
-			// check that all instructions can be inlined
-			for (InsnNode insn : insns) {
-				RegisterArg res = insn.getResult();
-				if (res == null) {
-					pass = false;
-					break;
-				}
-				List<RegisterArg> useList = res.getSVar().getUseList();
-				int useCount = useList.size();
-				if (useCount == 0) {
-					// TODO?
-					pass = false;
-					break;
-				}
-				InsnArg arg = useList.get(0);
-				InsnNode usePlace = arg.getParentInsn();
-				if (!BlockUtils.blockContains(block, usePlace)
-						&& !BlockUtils.blockContains(next, usePlace)) {
-					pass = false;
-					break;
-				}
-				if (useCount > 1) {
-					forceInlineInsns.add(insn);
-				} else {
-					// allow only forced assign inline
-					pass = false;
-				}
-			}
-		}
-		if (!pass) {
+		if (!checkInsnsInline(block, next, forceInlineInsns)) {
 			return null;
 		}
 		IfInfo nextInfo = makeIfInfo(info.getMth(), next);
@@ -510,5 +484,41 @@ final class IfRegionMaker {
 		}
 		nextInfo.addInsnsForForcedInline(forceInlineInsns);
 		return nextInfo;
+	}
+
+	/**
+	 * Check that all instructions can be inlined
+	 */
+	private static boolean checkInsnsInline(BlockNode block, BlockNode next, List<InsnNode> forceInlineInsns) {
+		List<InsnNode> insns = block.getInstructions();
+		if (insns.isEmpty()) {
+			return true;
+		}
+		boolean pass = true;
+		for (InsnNode insn : insns) {
+			RegisterArg res = insn.getResult();
+			if (res == null) {
+				return false;
+			}
+			List<RegisterArg> useList = res.getSVar().getUseList();
+			int useCount = useList.size();
+			if (useCount == 0) {
+				// TODO?
+				return false;
+			}
+			InsnArg arg = useList.get(0);
+			InsnNode usePlace = arg.getParentInsn();
+			if (!BlockUtils.blockContains(block, usePlace)
+					&& !BlockUtils.blockContains(next, usePlace)) {
+				return false;
+			}
+			if (useCount > 1) {
+				forceInlineInsns.add(insn);
+			} else {
+				// allow only forced assign inline
+				pass = false;
+			}
+		}
+		return pass;
 	}
 }

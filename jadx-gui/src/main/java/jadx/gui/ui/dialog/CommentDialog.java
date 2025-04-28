@@ -3,14 +3,12 @@ package jadx.gui.ui.dialog;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Container;
-import java.awt.Dialog;
 import java.awt.Dimension;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Objects;
 import java.util.function.Consumer;
 
 import javax.swing.BorderFactory;
@@ -18,13 +16,11 @@ import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
-import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.SwingConstants;
-import javax.swing.WindowConstants;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,21 +33,14 @@ import jadx.gui.settings.JadxProject;
 import jadx.gui.ui.codearea.CodeArea;
 import jadx.gui.utils.NLS;
 import jadx.gui.utils.TextStandardActions;
-import jadx.gui.utils.UiUtils;
 
-public class CommentDialog extends JDialog {
+public class CommentDialog extends CommonDialog {
 	private static final long serialVersionUID = -1865682124935757528L;
 
 	private static final Logger LOG = LoggerFactory.getLogger(CommentDialog.class);
 
-	public static void show(CodeArea codeArea, ICodeComment blankComment) {
-		ICodeComment existComment = searchForExistComment(codeArea, blankComment);
-		Dialog dialog;
-		if (existComment != null) {
-			dialog = new CommentDialog(codeArea, existComment, true);
-		} else {
-			dialog = new CommentDialog(codeArea, blankComment, false);
-		}
+	public static void show(CodeArea codeArea, ICodeComment comment, boolean updateComment) {
+		CommentDialog dialog = new CommentDialog(codeArea, comment, updateComment);
 		dialog.setVisible(true);
 	}
 
@@ -79,25 +68,6 @@ public class CommentDialog extends JDialog {
 		}
 	}
 
-	private static ICodeComment searchForExistComment(CodeArea codeArea, ICodeComment blankComment) {
-		try {
-			JadxProject project = codeArea.getProject();
-			JadxCodeData codeData = project.getCodeData();
-			if (codeData == null || codeData.getComments().isEmpty()) {
-				return null;
-			}
-			for (ICodeComment comment : codeData.getComments()) {
-				if (Objects.equals(comment.getNodeRef(), blankComment.getNodeRef())
-						&& Objects.equals(comment.getCodeRef(), blankComment.getCodeRef())) {
-					return comment;
-				}
-			}
-		} catch (Exception e) {
-			LOG.error("Error searching for exists comment", e);
-		}
-		return null;
-	}
-
 	private final transient CodeArea codeArea;
 	private final transient ICodeComment comment;
 	private final transient boolean updateComment;
@@ -123,7 +93,7 @@ public class CommentDialog extends JDialog {
 			}
 			return;
 		}
-		CommentStyle style = ((CommentStyle) styleCombo.getSelectedItem());
+		CommentStyle style = (CommentStyle) styleCombo.getSelectedItem();
 		ICodeComment newComment = new JadxCodeComment(comment.getNodeRef(), comment.getCodeRef(), newCommentStr, style);
 		if (updateComment) {
 			updateCommentsData(codeArea, list -> {
@@ -149,7 +119,7 @@ public class CommentDialog extends JDialog {
 		commentArea = new JTextArea();
 		TextStandardActions.attach(commentArea);
 		commentArea.setEditable(true);
-		commentArea.setFont(codeArea.getMainWindow().getSettings().getFont());
+		commentArea.setFont(mainWindow.getSettings().getFont());
 		commentArea.setAlignmentX(Component.LEFT_ALIGNMENT);
 
 		commentArea.addKeyListener(new KeyAdapter() {
@@ -215,14 +185,7 @@ public class CommentDialog extends JDialog {
 		} else {
 			setTitle(NLS.str("comment_dialog.title.add"));
 		}
-		pack();
-		if (!codeArea.getMainWindow().getSettings().loadWindowPos(this)) {
-			setSize(800, 140);
-		}
-		setLocationRelativeTo(null);
-		setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
-		setModalityType(ModalityType.APPLICATION_MODAL);
-		UiUtils.addEscapeShortCutToDispose(this);
+		commonWindowInit();
 	}
 
 	protected JPanel initButtonsPanel() {
@@ -255,11 +218,5 @@ public class CommentDialog extends JDialog {
 		buttonPane.add(Box.createRigidArea(new Dimension(10, 0)));
 		buttonPane.add(cancelButton);
 		return buttonPane;
-	}
-
-	@Override
-	public void dispose() {
-		codeArea.getMainWindow().getSettings().saveWindowPos(this);
-		super.dispose();
 	}
 }

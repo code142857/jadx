@@ -14,16 +14,16 @@ group = "io.github.skylot"
 version = jadxVersion
 
 dependencies {
-	implementation("org.slf4j:slf4j-api:2.0.16")
-	compileOnly("org.jetbrains:annotations:26.0.1")
+	implementation("org.slf4j:slf4j-api:2.0.17")
+	compileOnly("org.jetbrains:annotations:26.0.2")
 
-	testImplementation("ch.qos.logback:logback-classic:1.5.11")
-	testImplementation("org.assertj:assertj-core:3.26.3")
+	testImplementation("ch.qos.logback:logback-classic:1.5.18")
+	testImplementation("org.assertj:assertj-core:3.27.3")
 
-	testImplementation("org.junit.jupiter:junit-jupiter:5.11.2")
+	testImplementation("org.junit.jupiter:junit-jupiter:5.12.2")
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
-	testCompileOnly("org.jetbrains:annotations:26.0.1")
+	testCompileOnly("org.jetbrains:annotations:26.0.2")
 }
 
 repositories {
@@ -45,6 +45,7 @@ java {
 tasks {
 	compileJava {
 		options.encoding = "UTF-8"
+		// options.compilerArgs = listOf("-Xlint:deprecation")
 	}
 	jar {
 		manifest {

@@ -4,12 +4,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,13 +21,14 @@ import jadx.api.plugins.input.JadxCodeInput;
 import jadx.api.plugins.loader.JadxPluginLoader;
 import jadx.api.plugins.options.JadxPluginOptions;
 import jadx.api.plugins.options.OptionDescription;
-import jadx.core.utils.exceptions.JadxRuntimeException;
+import jadx.core.plugins.versions.VerifyRequiredVersion;
 
 public class JadxPluginManager {
 	private static final Logger LOG = LoggerFactory.getLogger(JadxPluginManager.class);
 
 	private final JadxDecompiler decompiler;
 	private final JadxPluginsData pluginsData;
+	private final Set<String> disabledPlugins;
 	private final SortedSet<PluginContext> allPlugins = new TreeSet<>();
 	private final SortedSet<PluginContext> resolvedPlugins = new TreeSet<>();
 	private final Map<String, String> provideSuggestions = new TreeMap<>();
@@ -35,6 +38,7 @@ public class JadxPluginManager {
 	public JadxPluginManager(JadxDecompiler decompiler) {
 		this.decompiler = decompiler;
 		this.pluginsData = new JadxPluginsData(decompiler, this);
+		this.disabledPlugins = decompiler.getArgs().getDisabledPlugins();
 	}
 
 	/**
@@ -46,21 +50,35 @@ public class JadxPluginManager {
 
 	public void load(JadxPluginLoader pluginLoader) {
 		allPlugins.clear();
+		VerifyRequiredVersion verifyRequiredVersion = new VerifyRequiredVersion();
 		for (JadxPlugin plugin : pluginLoader.load()) {
-			addPlugin(plugin);
+			addPlugin(plugin, verifyRequiredVersion);
 		}
 		resolve();
 	}
 
 	public void register(JadxPlugin plugin) {
 		Objects.requireNonNull(plugin);
-		PluginContext addedPlugin = addPlugin(plugin);
+		PluginContext addedPlugin = addPlugin(plugin, new VerifyRequiredVersion());
+		if (addedPlugin == null) {
+			LOG.debug("Can't register plugin, it was disabled: {}", plugin.getPluginInfo().getPluginId());
+			return;
+		}
 		LOG.debug("Register plugin: {}", addedPlugin.getPluginId());
 		resolve();
 	}
 
-	private PluginContext addPlugin(JadxPlugin plugin) {
+	private @Nullable PluginContext addPlugin(JadxPlugin plugin, VerifyRequiredVersion verifyRequiredVersion) {
 		PluginContext pluginContext = new PluginContext(decompiler, pluginsData, plugin);
+		if (disabledPlugins.contains(pluginContext.getPluginId())) {
+			return null;
+		}
+		String requiredJadxVersion = pluginContext.getPluginInfo().getRequiredJadxVersion();
+		if (!verifyRequiredVersion.isCompatible(requiredJadxVersion)) {
+			LOG.warn("Plugin '{}' not loaded: requires '{}' jadx version which it is not compatible with current: {}",
+					pluginContext, requiredJadxVersion, verifyRequiredVersion.getJadxVersion());
+			return null;
+		}
 		LOG.debug("Loading plugin: {}", pluginContext);
 		if (!allPlugins.add(pluginContext)) {
 			throw new IllegalArgumentException("Duplicate plugin id: " + pluginContext + ", class " + plugin.getClass());
@@ -130,13 +148,31 @@ public class JadxPluginManager {
 				}
 				context.init();
 			} catch (Exception e) {
-				throw new JadxRuntimeException("Failed to init plugin: " + context.getPluginId(), e);
+				LOG.warn("Failed to init plugin: {}", context.getPluginId(), e);
 			}
 		}
 		for (PluginContext context : pluginContexts) {
 			JadxPluginOptions options = context.getOptions();
 			if (options != null) {
 				verifyOptions(context, options);
+			}
+		}
+	}
+
+	public void unloadAll() {
+		unload(allPlugins);
+	}
+
+	public void unloadResolved() {
+		unload(resolvedPlugins);
+	}
+
+	public void unload(SortedSet<PluginContext> pluginContexts) {
+		for (PluginContext context : pluginContexts) {
+			try {
+				context.unload();
+			} catch (Exception e) {
+				LOG.warn("Failed to unload plugin: {}", context.getPluginId(), e);
 			}
 		}
 	}

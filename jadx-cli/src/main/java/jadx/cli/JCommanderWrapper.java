@@ -4,7 +4,7 @@ import java.io.PrintStream;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -13,6 +13,7 @@ import java.util.function.Supplier;
 import org.jetbrains.annotations.Nullable;
 
 import com.beust.jcommander.JCommander;
+import com.beust.jcommander.Parameter;
 import com.beust.jcommander.ParameterDescription;
 import com.beust.jcommander.ParameterException;
 import com.beust.jcommander.Parameterized;
@@ -26,7 +27,7 @@ import jadx.core.plugins.PluginContext;
 import jadx.core.utils.Utils;
 import jadx.plugins.tools.JadxExternalPluginsLoader;
 
-public class JCommanderWrapper<T> {
+public class JCommanderWrapper {
 	private final JCommander jc;
 	private final JadxCLIArgs argsObj;
 
@@ -41,11 +42,21 @@ public class JCommanderWrapper<T> {
 	public boolean parse(String[] args) {
 		try {
 			jc.parse(args);
+			applyFiles(argsObj);
 			return true;
 		} catch (ParameterException e) {
 			System.err.println("Arguments parse error: " + e.getMessage());
 			printUsage();
 			return false;
+		}
+	}
+
+	public void overrideProvided(JadxCLIArgs obj) {
+		applyFiles(obj);
+		for (ParameterDescription parameter : jc.getParameters()) {
+			if (parameter.isAssigned()) {
+				overrideProperty(obj, parameter);
+			}
 		}
 	}
 
@@ -57,20 +68,21 @@ public class JCommanderWrapper<T> {
 		return JadxCLICommands.process(this, jc, parsedCommand);
 	}
 
-	public void overrideProvided(JadxCLIArgs obj) {
-		List<ParameterDescription> fieldsParams = jc.getParameters();
-		List<ParameterDescription> parameters = new ArrayList<>(1 + fieldsParams.size());
-		parameters.add(jc.getMainParameterValue());
-		parameters.addAll(fieldsParams);
-		for (ParameterDescription parameter : parameters) {
-			if (parameter.isAssigned()) {
-				// copy assigned field value to obj
-				Parameterized parameterized = parameter.getParameterized();
-				Object providedValue = parameterized.get(parameter.getObject());
-				Object newValue = mergeValues(parameterized.getType(), providedValue, () -> parameterized.get(obj));
-				parameterized.set(obj, newValue);
-			}
-		}
+	/**
+	 * The main parameter parsing doesn't work if accepting unknown options
+	 */
+	private void applyFiles(JadxCLIArgs argsObj) {
+		argsObj.setFiles(jc.getUnknownOptions());
+	}
+
+	/**
+	 * Override assigned field value to obj
+	 */
+	private static void overrideProperty(JadxCLIArgs obj, ParameterDescription parameter) {
+		Parameterized parameterized = parameter.getParameterized();
+		Object providedValue = parameterized.get(parameter.getObject());
+		Object newValue = mergeValues(parameterized.getType(), providedValue, () -> parameterized.get(obj));
+		parameterized.set(obj, newValue);
 	}
 
 	@SuppressWarnings({ "rawtypes", "unchecked" })
@@ -82,10 +94,6 @@ public class JCommanderWrapper<T> {
 		}
 		// simple override
 		return value;
-	}
-
-	public List<String> getUnknownOptions() {
-		return jc.getUnknownOptions();
 	}
 
 	public void printUsage() {
@@ -133,14 +141,16 @@ public class JCommanderWrapper<T> {
 		out.println("options:");
 
 		List<ParameterDescription> params = jc.getParameters();
-		Map<String, ParameterDescription> paramsMap = new LinkedHashMap<>(params.size());
+		Map<String, ParameterDescription> paramsMap = new HashMap<>(params.size());
 		int maxNamesLen = 0;
 		for (ParameterDescription p : params) {
 			paramsMap.put(p.getParameterized().getName(), p);
 			int len = p.getNames().length();
-			if (len > maxNamesLen) {
-				maxNamesLen = len;
+			String valueDesc = getValueDesc(p);
+			if (valueDesc != null) {
+				len += 1 + valueDesc.length();
 			}
+			maxNamesLen = Math.max(maxNamesLen, len);
 		}
 		maxNamesLen += 3;
 
@@ -153,8 +163,12 @@ public class JCommanderWrapper<T> {
 			}
 			StringBuilder opt = new StringBuilder();
 			opt.append("  ").append(p.getNames());
-			String description = p.getDescription();
+			String valueDesc = getValueDesc(p);
+			if (valueDesc != null) {
+				opt.append(' ').append(valueDesc);
+			}
 			addSpaces(opt, maxNamesLen - opt.length());
+			String description = p.getDescription();
 			if (description.contains("\n")) {
 				String[] lines = description.split("\n");
 				opt.append("- ").append(lines[0]);
@@ -175,6 +189,11 @@ public class JCommanderWrapper<T> {
 			out.println(opt);
 		}
 		return maxNamesLen;
+	}
+
+	private static @Nullable String getValueDesc(ParameterDescription p) {
+		Parameter parameterAnnotation = p.getParameterAnnotation();
+		return parameterAnnotation == null ? null : parameterAnnotation.defaultValueDescription();
 	}
 
 	/**
@@ -225,13 +244,17 @@ public class JCommanderWrapper<T> {
 			JadxPluginManager pluginManager = decompiler.getPluginManager();
 			pluginManager.load(new JadxExternalPluginsLoader());
 			pluginManager.initAll();
-			for (PluginContext context : pluginManager.getAllPluginContexts()) {
-				JadxPluginOptions options = context.getOptions();
-				if (options != null) {
-					if (appendPlugin(context.getPluginInfo(), context.getOptions(), sb, maxNamesLen)) {
-						k++;
+			try {
+				for (PluginContext context : pluginManager.getAllPluginContexts()) {
+					JadxPluginOptions options = context.getOptions();
+					if (options != null) {
+						if (appendPlugin(context.getPluginInfo(), context.getOptions(), sb, maxNamesLen)) {
+							k++;
+						}
 					}
 				}
+			} finally {
+				pluginManager.unloadAll();
 			}
 		}
 		if (sb.length() == 0) {

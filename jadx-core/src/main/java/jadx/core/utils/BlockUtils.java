@@ -10,6 +10,7 @@ import java.util.Deque;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Queue;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -443,7 +444,7 @@ public class BlockUtils {
 	 */
 	public static @Nullable BlockNode getPrevBlockOnPath(MethodNode mth, BlockNode block, BlockNode pathStart) {
 		BlockSet preds = BlockSet.from(mth, block.getPredecessors());
-		if (preds.get(pathStart)) {
+		if (preds.contains(pathStart)) {
 			return pathStart;
 		}
 		DFSIteration dfs = new DFSIteration(mth, pathStart, BlockNode::getCleanSuccessors);
@@ -452,7 +453,7 @@ public class BlockUtils {
 			if (next == null) {
 				return null;
 			}
-			if (preds.get(next)) {
+			if (preds.contains(next)) {
 				return next;
 			}
 		}
@@ -761,18 +762,22 @@ public class BlockUtils {
 	/**
 	 * Return common cross block for input set.
 	 *
-	 * @return null if cross is a method exit block.
+	 * @return could be one of the giving blocks. null if cross is a method exit block.
 	 */
 	@Nullable
 	public static BlockNode getPathCross(MethodNode mth, Collection<BlockNode> blocks) {
 		BitSet domFrontBS = newBlocksBitSet(mth);
+		BitSet tmpBS = newBlocksBitSet(mth); // store block itself and its domFrontier
 		boolean first = true;
 		for (BlockNode b : blocks) {
+			tmpBS.clear();
+			tmpBS.set(b.getId());
+			tmpBS.or(b.getDomFrontier());
 			if (first) {
-				domFrontBS.or(b.getDomFrontier());
+				domFrontBS.or(tmpBS);
 				first = false;
 			} else {
-				domFrontBS.and(b.getDomFrontier());
+				domFrontBS.and(tmpBS);
 			}
 		}
 		domFrontBS.clear(mth.getExitBlock().getId());
@@ -790,7 +795,7 @@ public class BlockUtils {
 		mth.getLoops().forEach(l -> excluded.set(l.getStart().getId()));
 		if (!mth.isNoExceptionHandlers()) {
 			// exclude exception handlers paths
-			mth.getExceptionHandlers().forEach(h -> mergeExcHandlerDomFrontier(mth, h, excluded));
+			mth.getExceptionHandlers().forEach(h -> addExcHandler(mth, h, excluded));
 		}
 		domFrontBS.andNot(excluded);
 		oneBlock = bitSetToOneBlock(mth, domFrontBS);
@@ -805,7 +810,6 @@ public class BlockUtils {
 				BitSet domFrontier = block.getDomFrontier();
 				if (!domFrontier.isEmpty()) {
 					combinedDF.or(domFrontier);
-					combinedDF.clear(block.getId());
 				}
 			});
 			combinedDF.andNot(excluded);
@@ -827,18 +831,13 @@ public class BlockUtils {
 		}
 	}
 
-	private static void mergeExcHandlerDomFrontier(MethodNode mth, ExceptionHandler handler, BitSet set) {
+	private static void addExcHandler(MethodNode mth, ExceptionHandler handler, BitSet set) {
 		BlockNode handlerBlock = handler.getHandlerBlock();
 		if (handlerBlock == null) {
 			mth.addDebugComment("Null handler block in: " + handler);
 			return;
 		}
-		BitSet domFrontier = handlerBlock.getDomFrontier();
-		if (domFrontier == null) {
-			mth.addDebugComment("Null dom frontier in handler: " + handler);
-			return;
-		}
-		set.or(domFrontier);
+		set.set(handlerBlock.getId());
 	}
 
 	public static BlockNode getPathCross(MethodNode mth, BlockNode b1, BlockNode b2) {
@@ -1210,7 +1209,7 @@ public class BlockUtils {
 		if (b1 == null || b2 == null) {
 			return false;
 		}
-		return isEqualReturnBlocks(b1, b2) || isEmptySyntheticPath(b1, b2);
+		return isEqualReturnBlocks(b1, b2) || isEmptySyntheticPath(b1, b2) || isDuplicateBlockPath(b1, b2);
 	}
 
 	private static boolean isEmptySyntheticPath(BlockNode b1, BlockNode b2) {
@@ -1245,5 +1244,46 @@ public class BlockUtils {
 			return false;
 		}
 		return firstArg.equals(secondArg);
+	}
+
+	public static boolean isDuplicateBlockPath(BlockNode first, BlockNode second) {
+		if (first.getSuccessors().size() == 1 && second.getSuccessors().size() == 1
+				&& first.getSuccessors().get(0).equals(second.getSuccessors().get(0))) {
+			return isSameInsnsBlocks(first, second);
+		}
+		return false;
+	}
+
+	public static boolean isSameInsnsBlocks(BlockNode first, BlockNode second) {
+		List<InsnNode> firstInsns = first.getInstructions();
+		List<InsnNode> secondInsns = second.getInstructions();
+		if (firstInsns.size() != secondInsns.size()) {
+			return false;
+		}
+		int len = firstInsns.size();
+		for (int i = 0; i < len; i++) {
+			InsnNode firstInsn = firstInsns.get(i);
+			InsnNode secondInsn = secondInsns.get(i);
+			if (!isInsnDeepEquals(firstInsn, secondInsn)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean isInsnDeepEquals(InsnNode first, InsnNode second) {
+		if (first == second) {
+			return true;
+		}
+		return first.isSame(second)
+				&& Objects.equals(first.getArguments(), second.getArguments())
+				&& resultIsSameReg(first.getResult(), second.getResult());
+	}
+
+	private static boolean resultIsSameReg(RegisterArg first, RegisterArg second) {
+		if (first == null || second == null) {
+			return first == second;
+		}
+		return first.getRegNum() == second.getRegNum();
 	}
 }

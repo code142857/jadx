@@ -92,9 +92,33 @@ public class BlockProcessor extends AbstractVisitor {
 		PostDominatorTree.compute(mth);
 
 		updateCleanSuccessors(mth);
-		if (!mth.contains(AFlag.DISABLE_BLOCKS_LOCK)) {
-			mth.finishBasicBlocks();
-		}
+	}
+
+	/**
+	 * Recalculate all additional info attached to blocks:
+	 *
+	 * <pre>
+	 * - dominators
+	 * - dominance frontier
+	 * - post dominators (only if {@link AFlag#COMPUTE_POST_DOM} added to method)
+	 * - loops and nested loop info
+	 * </pre>
+	 * <p>
+	 * This method should be called after changing a block tree in custom passes added before
+	 * {@link BlockFinisher}.
+	 */
+	public static void updateBlocksData(MethodNode mth) {
+		clearBlocksState(mth);
+		DominatorTree.compute(mth);
+		markLoops(mth);
+
+		DominatorTree.computeDominanceFrontier(mth);
+		registerLoops(mth);
+		processNestedLoops(mth);
+
+		PostDominatorTree.compute(mth);
+
+		updateCleanSuccessors(mth);
 	}
 
 	static void updateCleanSuccessors(MethodNode mth) {
@@ -248,6 +272,7 @@ public class BlockProcessor extends AbstractVisitor {
 	}
 
 	private static void registerLoops(MethodNode mth) {
+		mth.resetLoops();
 		mth.getBasicBlocks().forEach(block -> {
 			if (block.contains(AFlag.LOOP_START)) {
 				block.getAll(AType.LOOP).forEach(mth::registerLoop);
@@ -654,7 +679,7 @@ public class BlockProcessor extends AbstractVisitor {
 	}
 
 	public static void removeMarkedBlocks(MethodNode mth) {
-		mth.getBasicBlocks().removeIf(block -> {
+		boolean removed = mth.getBasicBlocks().removeIf(block -> {
 			if (block.contains(AFlag.REMOVE)) {
 				if (!block.getPredecessors().isEmpty() || !block.getSuccessors().isEmpty()) {
 					LOG.warn("Block {} not deleted, method: {}", block, mth);
@@ -668,6 +693,9 @@ public class BlockProcessor extends AbstractVisitor {
 			}
 			return false;
 		});
+		if (removed) {
+			mth.updateBlockPositions();
+		}
 	}
 
 	private static void removeUnreachableBlocks(MethodNode mth) {
@@ -703,6 +731,7 @@ public class BlockProcessor extends AbstractVisitor {
 
 		toRemove.forEach(BlockSplitter::detachBlock);
 		mth.getBasicBlocks().removeAll(toRemove);
+		mth.updateBlockPositions();
 	}
 
 	private static void clearBlocksState(MethodNode mth) {
